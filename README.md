@@ -1,4 +1,4 @@
-# ESP32-dingBLEcopy
+# ESP32-ding BLEcopy
 某些蓝牙设备，比如某ding的卡机，他的蓝牙raw数据30秒变一次，这个项目可以远程复制他，（不需要自己有服务器）
 # 实现的功能
 用两个esp32   我这里用的esp32c3supermini，一个远程捕获蓝牙的raw数据   另一个在任何地方通电联网就能模拟出来（可以用 手机热点和otg）
