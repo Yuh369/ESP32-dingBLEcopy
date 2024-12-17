@@ -1,0 +1,260 @@
+#include <WiFi.h>
+#include <WebServer.h>
+#include <Preferences.h>
+#include <HTTPClient.h>
+#include <BLEDevice.h>
+#include <BLEUtils.h>
+#include <esp_sleep.h>
+
+#define AP_SSID "ESP32BLEServer"
+#define AP_PASSWORD "12345678"
+#define WEB_PORT 80
+
+#define LED_PIN 8
+
+char ssid[32] = "";
+char password[32] = "";
+
+// LeanCloud 服务器配置
+const char* api_url = "apiurl/1.1/classes/AdvertisingData?order=-createdAt&limit=1";//替换你的apiurl 注意只替换apiurl 示例https://abcde.lc-cn-n1-shared.com/1.1/classes/AdvertisingData?order=-createdAt&limit=1
+const char* appkey = "";                            //appkey
+const char* appid = "";                             //appid   你还需要替换95行 140行的mac地址  222行的初始化蓝牙raw
+
+// WebServer 对象
+WebServer server(WEB_PORT);
+
+// 加载存储的 WiFi 配置
+void loadCredentials() {
+    Preferences preferences;
+    preferences.begin("wifi", false);
+    preferences.getString("ssid", ssid, sizeof(ssid));
+    preferences.getString("password", password, sizeof(password));
+    preferences.end();
+}
+
+// 保存 WiFi 配置到 Flash
+void saveCredentials() {
+    Preferences preferences;
+    preferences.begin("wifi", false);
+    preferences.putString("ssid", ssid);
+    preferences.putString("password", password);
+    preferences.end();
+}
+
+// 处理根目录请求，返回 HTML 表单用于 WiFi 配置
+void handleRoot() {
+    String html = "<html><head><meta charset='UTF-8'><title>ESP32 配置页面</title></head>";
+    html += "<body><h1>ESP32 配置页面</h1>";
+    html += "<form method='post' action='/config'>";
+    html += "SSID:<br><input type='text' name='ssid'><br>";
+    html += "Password:<br><input type='password' name='password'><br><br>";
+    html += "<input type='submit' value='提交'>";
+    html += "</form></body></html>";
+    server.send(200, "text/html; charset=utf-8", html);
+}
+
+// 处理配置请求，保存配置并重启
+void handleConfig() {
+    if (server.hasArg("ssid") && server.hasArg("password")) {
+        strncpy(ssid, server.arg("ssid").c_str(), sizeof(ssid) - 1);
+        strncpy(password, server.arg("password").c_str(), sizeof(password) - 1);
+        saveCredentials();
+        server.send(200, "text/plain", "配置已保存，正在重启...");
+        ESP.restart();
+    } else {
+        server.send(400, "text/plain", "无效请求");
+    }
+}
+
+unsigned long startTime = 0;
+bool apModeStarted = false;
+unsigned long previousMillis = 0;
+const long intervalConnecting = 500;
+const long intervalAPMode = 150;
+unsigned long lastUpdateMillis = 0;
+const long updateInterval = 10000; // 10 秒
+
+// 启动 AP 模式
+void startAPMode() {
+    WiFi.softAP(AP_SSID, AP_PASSWORD);
+    IPAddress ip = WiFi.softAPIP();
+    Serial.print("AP IP 地址: ");
+    Serial.println(ip);
+
+    server.on("/", handleRoot);
+    server.on("/config", HTTP_POST, handleConfig);
+    server.begin();
+    Serial.println("HTTP 服务器已启动");
+
+    startTime = millis();
+    apModeStarted = true;
+}
+
+BLEAdvertising *pAdvertising;
+
+uint8_t bleMac[6] = {0xA1, 0xB2, 0x3C, 0xD4, 0xE5, 0xF6};      //替换为目标mac 全大写
+uint8_t bleRaw[31];
+// 如果复制出来的raw超过31组 那么把它改为true并维护下面的数组
+boolean rawMoreThan31 = false;
+// 31-end
+uint8_t bleRaw32[] = {0x0C,0x09,0x52,0x54,0x4B,0x5F,0x42,0x54,0x5F,0x34,0x2E,0x31,0x00};
+
+void updateBLEData(const String& data) {
+    // 更新 BLE 广播数据
+    int dataLength = data.length() / 2;
+    for (int i = 0; i < dataLength; ++i) {
+        bleRaw[i] = strtoul(data.substring(i * 2, i * 2 + 2).c_str(), nullptr, 16);
+    }
+    
+    // 更新广播数据
+    esp_err_t errRc = ::esp_ble_gap_config_adv_data_raw(bleRaw, dataLength);
+    if (errRc != ESP_OK) {
+        Serial.printf("esp_ble_gap_config_adv_data_raw: %d\n", errRc);
+    }
+
+    // 超过31
+    if (rawMoreThan31) {
+        errRc = ::esp_ble_gap_config_scan_rsp_data_raw(bleRaw32, sizeof(bleRaw32)/sizeof(bleRaw32[0]));
+        if (errRc != ESP_OK) {
+            Serial.printf("esp_ble_gap_config_scan_rsp_data_raw: %d\n", errRc);
+        }
+    }
+
+    pAdvertising->start();
+}
+
+void fetchAdvertisingData() {
+    if ((WiFi.status() == WL_CONNECTED)) {
+        HTTPClient http;
+        http.begin(api_url); 
+        http.addHeader("X-LC-Id", appid);
+        http.addHeader("X-LC-Key", appkey);
+
+        int httpResponseCode = http.GET();
+
+        if (httpResponseCode > 0) {
+            String payload = http.getString();
+            Serial.println(payload);
+            // 解析 JSON 数据
+            int dataIndex = payload.indexOf("\"data\":\"");
+            int macIndex = payload.indexOf("\"mac\":\"F1:A2:63:4E:5F:6D\""); //替换为目标mac地址
+
+            if (dataIndex != -1 && macIndex != -1) {
+                String data = payload.substring(dataIndex + 8, payload.indexOf("\"", dataIndex + 8));
+                // 检查是否需要更新 BLE 数据
+                String currentData = "";
+                for (int i = 0; i < 31; ++i) {
+                    currentData += String(bleRaw[i], HEX);
+                }
+                if (currentData != data) {
+                    updateBLEData(data);
+                }
+            }
+        }
+
+        http.end();
+    }
+}
+
+void setup() {
+    Serial.begin(115200);
+    pinMode(LED_PIN, OUTPUT);
+    digitalWrite(LED_PIN, LOW); // 初始状态为熄灭
+
+    // 加载存储的 WiFi 配置
+    loadCredentials();
+
+    // 尝试连接到 WiFi
+    WiFi.begin(ssid, password);
+    unsigned long connectionStartTime = millis();
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(1000);
+        Serial.println("正在连接到 WiFi...");
+        unsigned long currentMillis = millis();
+        if (currentMillis - previousMillis >= intervalConnecting) {
+            previousMillis = currentMillis;
+            digitalWrite(LED_PIN, !digitalRead(LED_PIN)); // 500ms 间隔闪烁
+        }
+
+        // 如果超过 30 秒未连接，启动 AP 模式
+        if (millis() - connectionStartTime > 30000) {
+            Serial.println("连接 WiFi 超时，启动 AP 模式");
+            startAPMode();
+            return;
+        }
+    }
+
+    Serial.println("WiFi 连接成功");
+    digitalWrite(LED_PIN, LOW); // WiFi 连接成功，熄灭 LED
+
+    // esp32没有提供设置蓝牙mac地址的api 通过查看esp32的源代码
+    // 此操作将根据蓝牙mac算出base mac
+    if (UNIVERSAL_MAC_ADDR_NUM == FOUR_UNIVERSAL_MAC_ADDR) {
+        bleMac[5] -= 2;
+    } else if (UNIVERSAL_MAC_ADDR_NUM == TWO_UNIVERSAL_MAC_ADDR) {
+        bleMac[5] -= 1;
+    }
+    esp_base_mac_addr_set(bleMac);
+
+    // 初始化蓝牙前设置基础 MAC 地址
+    esp_err_t result = esp_base_mac_addr_set(bleMac);
+    if (result != ESP_OK) {
+        Serial.printf("Failed to set base MAC address, error: %d\n", result);
+        return;
+    }
+
+    // 初始化蓝牙设备
+    BLEDevice::init("");
+
+    // Create the BLE Server
+    // BLEServer *pServer = BLEDevice::createServer(); // <-- no longer required to instantiate BLEServer, less flash and ram usage
+
+    pAdvertising = BLEDevice::getAdvertising();
+
+    // 设备信息设置成空白的
+    BLEAdvertisementData oScanResponseData = BLEAdvertisementData();
+    pAdvertising->setScanResponseData(oScanResponseData);
+
+    BLEAdvertisementData oAdvertisementData = BLEAdvertisementData();
+    pAdvertising->setAdvertisementData(oAdvertisementData);
+
+    // 初始的raw广播
+    updateBLEData("EFF060001092002034547C905491DD1E2578178794D0FB97500CEA5FFFFFF");//替换为你手机捕获的raw广播数据，去掉0x，这里仅做刚启动的广播使用 ，联网后会自动更新
+
+    // 获取并更新广播数据
+    fetchAdvertisingData();
+}
+
+void loop() {
+    if (WiFi.status() != WL_CONNECTED) {
+        if (apModeStarted) {
+            unsigned long currentMillis = millis();
+            if (currentMillis - previousMillis >= intervalAPMode) {
+                previousMillis = currentMillis;
+                digitalWrite(LED_PIN, !digitalRead(LED_PIN)); // 150ms 间隔闪烁
+            }
+            server.handleClient();
+            if (millis() - startTime > 90000) { // AP 模式运行 90 秒后重启
+                Serial.println("AP 模式超时，重启设备");
+                ESP.restart();
+            }
+        }
+        return;
+    }
+
+    unsigned long currentMillis = millis();
+    if (currentMillis - lastUpdateMillis >= updateInterval) {
+        lastUpdateMillis = currentMillis;
+        fetchAdvertisingData();
+    }
+
+    // 每30分钟重启一次
+    static unsigned long restartMillis = 0;
+    if (currentMillis - restartMillis >= 1800000) { // 1800000 毫秒等于 30 分钟
+        restartMillis = currentMillis;
+        Serial.println("设备将在30分钟后重启");
+        ESP.restart();
+    }
+
+    // WiFi 连接成功后的逻辑
+}
