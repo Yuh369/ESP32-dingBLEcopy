@@ -32,6 +32,8 @@ Arduino IDE 把BLEcopy的代码粘贴进去，你需要修改appid appkey MAC和
 可以有多个接收端 leancloud每天api 3w次内免费 1GB存储内免费，实测一个发送端一个接收端24小时运行api次数为1.1w 每天占用1mb空间，
 代码很臃肿但是实现了我的功能我也懒得改了，自用稳定了一周，没出现死机，蓝牙更新 模拟失败的情况
 
+leancloud必须为中国大陆，国际版会403拒绝，暂时不会修复
+
 # 鸣谢
 [dingBle](https://github.com/LuisRain/dingBle/tree/858e01fe21fb3730ece37afea7de733591ba381d)
 
