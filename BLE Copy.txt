@@ -16,13 +16,13 @@ char ssid[32] = "";
 char password[32] = "";
 
 // Leancloud 配置
-const String appId = "appid";               //替换appid
-const String appKey = "appkey";             //替换appkey
-const String className = "AdvertisingData"; // Class不需要动，注意去220行换你的api服务器地址
+const String appId = "appid"; // 替换appid
+const String appKey = "appkey"; // 替换appkey
+const String apiurl = "api"; // 这里把apiurl替换为你的api服务器地址  ：示例https://123123.lc-cn-n1-shared.com
 
-// 指定的MAC地址
-static BLEAddress *pServerAddress = new BLEAddress("FF:FF:FF:FF:FF:FF"); // 替换目标mac地址大写
+static BLEAddress *pServerAddress = new BLEAddress("A1:B2:C3:4D:5F:6E"); // 目标mac地址大写
 
+const String className = "/1.1/classes/AdvertisingData"; // Class不需要动
 // 存储上一次的通告数据
 std::vector<uint8_t> lastPayload;
 
@@ -55,11 +55,18 @@ public:
                 lastPayload = currentPayload;
                 hasChanged = true;
             } else {
+                Serial.println("No change in raw data.");
                 hasChanged = false;
             }
+        } else {
+            Serial.print("Different Device found: ");
+            Serial.println(advertisedDevice.getAddress().toString().c_str());
         }
     }
 };
+
+// 定义全局的 MyAdvertisedDeviceCallbacks 对象
+MyAdvertisedDeviceCallbacks advertisedDeviceCallbacks;
 
 void loadCredentials() {
     Preferences preferences;
@@ -164,7 +171,7 @@ void setup() {
     // 初始化BLE设备
     BLEDevice::init("");
     BLEScan* pBLEScan = BLEDevice::getScan();
-    pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
+    pBLEScan->setAdvertisedDeviceCallbacks(&advertisedDeviceCallbacks);
     pBLEScan->setActiveScan(true); // 主动扫描
     pBLEScan->setInterval(100);
     pBLEScan->setWindow(99); // 扫描间隔和窗口设置
@@ -194,15 +201,14 @@ void loop() {
 
     digitalWrite(LED_PIN, LOW); // WiFi连接成功，熄灭LED
 
-    MyAdvertisedDeviceCallbacks* callbacks = new MyAdvertisedDeviceCallbacks();
-    BLEScanResults foundDevices = BLEDevice::getScan()->start(10);
+    BLEScanResults* foundDevices = BLEDevice::getScan()->start(10);
     Serial.print("Devices found: ");
-    Serial.println(foundDevices.getCount());
+    Serial.println(foundDevices->getCount());
     Serial.println("Scan done!");
 
-    if (callbacks->hasChanged) {
+    if (advertisedDeviceCallbacks.hasChanged) {
         String jsonData = "{\"data\": \"";
-        for (uint8_t byte : callbacks->currentPayload) {
+        for (uint8_t byte : advertisedDeviceCallbacks.currentPayload) {
             char hexStr[3];
             sprintf(hexStr, "%02X", byte);
             jsonData += hexStr;
@@ -217,11 +223,12 @@ void loop() {
         Serial.println(jsonData);
 
         HTTPClient http;
-        String url = "apiurl" + className;//这里把apiurl替换为你的api服务器地址
+        String url = apiurl + className;
         http.begin(url);
         http.addHeader("Content-Type", "application/json");
         http.addHeader("X-LC-Id", appId);
         http.addHeader("X-LC-Key", appKey);
+        http.addHeader("User-Agent", "ESP32C3Supermini/1.0"); // 添加 User-Agent 头
         int httpResponseCode = http.POST(jsonData);
 
         if (httpResponseCode > 0) {
@@ -254,7 +261,6 @@ void loop() {
     }
 
     BLEDevice::getScan()->clearResults();
-    delete callbacks;
 
     delay(10000); // 延迟10秒后再次扫描
 }
