@@ -38,3 +38,4 @@ leancloud必须为中国大陆，国际版会403拒绝，暂时不会修复
 [dingBle](https://github.com/LuisRain/dingBle/tree/858e01fe21fb3730ece37afea7de733591ba381d)
 
 [com.ztc1997.mockbluetoothdevice](https://github.com/Xposed-Modules-Repo/com.ztc1997.mockbluetoothdevice)
+# 仅用于蓝牙设备的开发与调试，请勿用于签到打卡等违法违纪用途。
