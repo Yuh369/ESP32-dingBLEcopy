@@ -16,9 +16,11 @@ char ssid[32] = "";
 char password[32] = "";
 
 // LeanCloud 服务器配置
-const char* api_url = "apiurl/1.1/classes/AdvertisingData?order=-createdAt&limit=1";//替换你的apiurl 注意只替换apiurl 示例https://abcde.lc-cn-n1-shared.com/1.1/classes/AdvertisingData?order=-createdAt&limit=1
-const char* appkey = "";                            //appkey
-const char* appid = "";                             //appid   你还需要替换95行 140行的mac地址  222行的初始化蓝牙raw
+const char* api_url = "apiurl/1.1/classes/AdvertisingData?order=-createdAt&limit=1";             //替换你的apiurl示例https://abcde.lc-cn-n1-shared.com/1.1/classes/AdvertisingData?order=-createdAt&limit=1
+const char* appkey = "appkey";                            //appkey
+const char* appid = "appid";                             //appid   
+
+uint8_t bleMac[6] = {0xAA, 0x22, 0x33, 0x44, 0x55, 066};      //替换为目标mac 全大写只替换 0x后的
 
 // WebServer 对象
 WebServer server(WEB_PORT);
@@ -92,7 +94,6 @@ void startAPMode() {
 
 BLEAdvertising *pAdvertising;
 
-uint8_t bleMac[6] = {0xA1, 0xB2, 0x3C, 0xD4, 0xE5, 0xF6};      //替换为目标mac 全大写
 uint8_t bleRaw[31];
 // 如果复制出来的raw超过31组 那么把它改为true并维护下面的数组
 boolean rawMoreThan31 = false;
@@ -137,9 +138,9 @@ void fetchAdvertisingData() {
             Serial.println(payload);
             // 解析 JSON 数据
             int dataIndex = payload.indexOf("\"data\":\"");
-            int macIndex = payload.indexOf("\"mac\":\"F1:A2:63:4E:5F:6D\""); //替换为目标mac地址
+            
 
-            if (dataIndex != -1 && macIndex != -1) {
+            if (dataIndex != -1 ) {
                 String data = payload.substring(dataIndex + 8, payload.indexOf("\"", dataIndex + 8));
                 // 检查是否需要更新 BLE 数据
                 String currentData = "";
@@ -219,7 +220,7 @@ void setup() {
     pAdvertising->setAdvertisementData(oAdvertisementData);
 
     // 初始的raw广播
-    updateBLEData("EFF060001092002034547C905491DD1E2578178794D0FB97500CEA5FFFFFF");//替换为你手机捕获的raw广播数据，去掉0x，这里仅做刚启动的广播使用 ，联网后会自动更新
+    updateBLEData("EEEFFF");//这里仅做刚启动的广播使用 ，联网后会自动更新
 
     // 获取并更新广播数据
     fetchAdvertisingData();
