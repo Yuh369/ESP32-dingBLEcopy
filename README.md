@@ -18,7 +18,7 @@ Arduino IDE 把BLEcopy的代码粘贴进去，你需要修改appid appkey MAC和
 
 # 接收端配置 接收端的esp32的开发板库版本必须为2.0.6！！！！！
 
-把BLEserver的 代码复制进ide 你需要修改appid appkey api服务器地址 95行 140行的mac地址  222行的初始化蓝牙raw（填写nRF Connect app中获取的raw 去除0x），英文字母全大写 
+把BLEserver的 代码复制进ide 你需要修改appid appkey api服务器地址 mac地址  
 替换完成后烧录到开发板，观察串口监视器，配网之后 有输出raw信息，并且在nRF Connect app中是否扫描到开发板的蓝牙信号，接收端配置结束。
 
 # 注意事项
